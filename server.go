@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"time"
 )
 
@@ -61,7 +64,6 @@ func registerRoute(mux *http.ServeMux, methodAndPath string,
 }
 
 func ServerStart() {
-	port := ":8080"
 	mux := http.NewServeMux()
 
 	registerRoute(mux, "GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -76,9 +78,33 @@ func ServerStart() {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 
-	err := http.ListenAndServe(port, mux)
-	if err != nil {
-		log.Println("Ошибка запуска сервера: ", err)
-		return
+	srv := &http.Server{
+		Addr:         ":8080",
+		Handler:      mux,
+		ReadTimeout:  5 * time.Second,   //максимум 5 сек на чтение запроса
+		WriteTimeout: 10 * time.Second,  //Максимум 10 сек на отправку ответа
+		IdleTimeout:  120 * time.Second, //Время жизни keep-alive соединения
 	}
+	//в горутине, для shutdown
+	go func() {
+		log.Println("Сервер запущен на :8080")
+		err := srv.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed { //Проверка сразу 2 ошибок, просто ошибка, если правда что-то не так
+			log.Fatalf("Ошибка сервера: %v", err) //Чтобы эта ошибка не выводилась при намеренном закрытии сервера череза ctrl C
+		}
+	}()
+	//ждем сигнал Ctrl+C
+	quit := make(chan os.Signal, 1)   //канал для сигналов ОС
+	signal.Notify(quit, os.Interrupt) //если придет сигнал ctrl+C(interrupt) положи его в канал quit
+	<-quit                            //программа замирает здесь, пока ты не нажмешь Ctrl+C
+
+	log.Println("Сервер выключается")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil { //принудительное заверешние сервера, запрещает новые сообщения
+		log.Fatal("Принудительное завершение: ", err) //+ ждет контекст 5 секунд
+	}
+	log.Println("Сервер успешно остановлен")
 }
