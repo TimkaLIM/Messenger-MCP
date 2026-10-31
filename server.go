@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"time"
 )
 
+// HANDLERS BLOCK START
 func echoHandler(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
@@ -22,13 +24,25 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	if jsonErr2 := json.NewEncoder(w).Encode(book); jsonErr2 != nil {
 		log.Println("Ошибка энкодинга echo: ", jsonErr2)
 		return
 	}
 }
+
+func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := a.DB.Ping(); err != nil {
+		log.Println("Ошибка пинга в healthHandler:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"status":"db_error"}`))
+		return
+	}
+	w.Write([]byte(`{"status":"ok"}`))
+}
+
+// HANDLERS BLOCK END
 
 func (rw *ResponseWriter) WriteHeader(code int) {
 	rw.statusCode = code
@@ -63,21 +77,20 @@ func registerRoute(mux *http.ServeMux, methodAndPath string,
 	mux.Handle(methodAndPath, logger)
 }
 
-func ServerStart() {
+func ServerStart(database *sql.DB) {
 	mux := http.NewServeMux()
+	apple := Application{
+		DB: database,
+	}
 
-	registerRoute(mux, "GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, err := w.Write([]byte(`{"status":"ok"}`))
-		if err != nil {
-			log.Println("Ошибка: ", err)
-		}
-	})
+	//РЕГИСТРАЦИЯ ХЭНДЛЕРОВ
+	registerRoute(mux, "GET /health", apple.healthHandler)
 	registerRoute(mux, "POST /echo", echoHandler)
 	registerRoute(mux, "GET /boom", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 
+	//ОТКРЫТИЕ СЕРВЕРА
 	srv := &http.Server{
 		Addr:         ":8080",
 		Handler:      mux,
@@ -87,7 +100,7 @@ func ServerStart() {
 	}
 	//в горутине, для shutdown
 	go func() {
-		log.Println("Сервер запущен на :8080")
+		fmt.Println("Сервер запущен на :8080")
 		err := srv.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed { //Проверка сразу 2 ошибок, просто ошибка, если правда что-то не так
 			log.Fatalf("Ошибка сервера: %v", err) //Чтобы эта ошибка не выводилась при намеренном закрытии сервера череза ctrl C

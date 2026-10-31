@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: messenger_db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: train55
+    ports:
+      - "5446:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  app:
+    build: .
+    container_name: messenger_app
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "postgres://admin:1234@db:5432/train55?sslmode=disable"
+    depends_on:
+      - db #запускать db только после старта db
+volumes:
+  postgres_data:
