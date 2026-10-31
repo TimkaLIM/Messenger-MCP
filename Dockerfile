@@ -10,7 +10,9 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENBLED=0 GOOS-linux go build -o /app/main .
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+RUN go build -o /app/main .
 
 #2 этап запуск
 

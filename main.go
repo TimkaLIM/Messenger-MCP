@@ -4,13 +4,17 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 func main() {
-	dsn := "postgres://admin:1234@localhost:5446/train55?sslmode=disable"
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://admin:1234@localhost:5446/train55?sslmode=disable"
+	}
 
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
