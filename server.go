@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/signal"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // HANDLERS BLOCK START
@@ -40,6 +42,33 @@ func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (a *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	w.Header().Set("Content-Type", "application/json")
+	var NewUser RegUser
+	err := json.NewDecoder(r.Body).Decode(&NewUser)
+	if err != nil {
+		log.Println("Ошибка регистрации пользователя: ", err)
+		w.WriteHeader(400)
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(NewUser.Password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Println("Ошибка создания хэша пароля: ", err)
+		w.WriteHeader(500)
+		return
+	}
+	_, err = a.DB.Exec("INSERT INTO users (username,password_hash) VALUES($1,$2)",
+		NewUser.Username, hash)
+	if err != nil {
+		log.Println("Ошибка регистрации пользователя в БД: ", err)
+		w.Write([]byte(`{"status":"register_error"}`))
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte(`{"status":"user_is_registred"}`))
 }
 
 // HANDLERS BLOCK END
@@ -89,6 +118,7 @@ func ServerStart(database *sql.DB) {
 	registerRoute(mux, "GET /boom", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
+	registerRoute(mux, "POST /register", apple.RegisterUser)
 
 	//ОТКРЫТИЕ СЕРВЕРА
 	srv := &http.Server{
