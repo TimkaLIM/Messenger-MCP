@@ -12,15 +12,16 @@ type ResponseWriter struct {
 }
 
 type Application struct {
-	DB *sql.DB
+	DB        *sql.DB
+	SecretKey string
 }
 
-type RegUser struct {
+type User struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-type User struct {
+type User2 struct {
 	ID           int       `json:"id"`
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"` //- означает никогда не отадавать это поле в json клиенту

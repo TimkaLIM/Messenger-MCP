@@ -3,14 +3,19 @@ package main
 import (
 	"database/sql"
 	"fmt"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"log"
 	"os"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	_ = godotenv.Load()
+
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		dsn = "postgres://admin:1234@localhost:5446/train55?sslmode=disable"

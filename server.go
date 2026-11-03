@@ -14,6 +14,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // HANDLERS BLOCK START
@@ -49,7 +51,7 @@ func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
 func (a *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	w.Header().Set("Content-Type", "application/json")
-	var NewUser RegUser
+	var NewUser User
 	err := json.NewDecoder(r.Body).Decode(&NewUser)
 	if err != nil {
 		log.Println("Ошибка регистрации пользователя: ", err)
@@ -81,6 +83,45 @@ func (a *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(`{"status":"user_is_registred"}`))
+}
+
+func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+	w.Header().Set("Content-Type", "application/json")
+	var LoginUser User
+	jsonErr := json.NewDecoder(r.Body).Decode(&LoginUser)
+	if jsonErr != nil {
+		log.Println("Ошибка декодирования логика/пароля: ", jsonErr)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	//Проверка пароля и логина
+	err := GetUserByUsername(a.DB, LoginUser.Username, LoginUser.Password)
+	if err != nil {
+		log.Println("Неверный логин или пароль", err)
+		w.WriteHeader(400)
+		w.Write([]byte(`{"status":"Bad Login or Password"}`))
+		return
+	}
+	w.Write([]byte(`{"status":"correct login and password"}`))
+
+	claims := jwt.MapClaims{
+		"username": LoginUser.Username,
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
+	}
+	//Создаем токен с алгоритмом HS256
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	secretKey := []byte(a.SecretKey)
+	tokenString, err := token.SignedString(secretKey)
+	if err != nil {
+		log.Println("Ошибка создания токена: ", err)
+		w.WriteHeader(500)
+		w.Write([]byte(`{"status":"login false"}`))
+		return
+	}
+	fmt.Fprintf(w, `{"token":"%s"}`, tokenString)
+
 }
 
 // HANDLERS BLOCK END
@@ -119,9 +160,12 @@ func registerRoute(mux *http.ServeMux, methodAndPath string,
 }
 
 func ServerStart(database *sql.DB) {
+
+	secret := os.Getenv("token_key")
 	mux := http.NewServeMux()
 	apple := Application{
-		DB: database,
+		DB:        database,
+		SecretKey: secret,
 	}
 
 	//РЕГИСТРАЦИЯ ХЭНДЛЕРОВ
@@ -131,6 +175,7 @@ func ServerStart(database *sql.DB) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 	registerRoute(mux, "POST /register", apple.RegisterUser)
+	registerRoute(mux, "POST /login", apple.LoginUser)
 
 	//ОТКРЫТИЕ СЕРВЕРА
 	srv := &http.Server{
