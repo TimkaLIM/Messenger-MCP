@@ -32,7 +32,10 @@ func main() {
 	}
 	fmt.Println("База данных запущена...")
 
-	RunMigrations(db) //Вызов миграций
+	MigrateErr := RunMigrations(db) //Вызов миграций
+	if MigrateErr != nil {
+		log.Fatal("Ошибка наложения миграций: ", MigrateErr)
+	}
 
 	ServerStart(db)
 }

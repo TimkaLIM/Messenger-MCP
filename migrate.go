@@ -21,11 +21,13 @@ func RunMigrations(db *sql.DB) error {
 		return fmt.Errorf("Ошибка чтения embed миграций: %w", err)
 	}
 	defer source.Close()
+
 	//оборачиваем пул в драйвер БД (куда накидывать миграции)
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
 		return fmt.Errorf("Ошибка драйвера миграций: %w", err)
 	}
+
 	//создаем наш мигратор, передаем наш source(источник, откуда брать миграции), и driver(БД)
 	m, err := migrate.NewWithInstance("iofs", source, "postgres", driver)
 	if err != nil {

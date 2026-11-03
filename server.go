@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -60,12 +62,22 @@ func (a *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
+	var pgErr *pgconn.PgError
 	_, err = a.DB.Exec("INSERT INTO users (username,password_hash) VALUES($1,$2)",
 		NewUser.Username, hash)
 	if err != nil {
-		log.Println("Ошибка регистрации пользователя в БД: ", err)
-		w.Write([]byte(`{"status":"register_error"}`))
-		return
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == "23505" {
+				log.Println("Ошибка регистрации пользователя в БД(дубликат): ", err)
+				w.WriteHeader(409)
+				w.Write([]byte(`{"status":"name is occupied"}`))
+				return
+			}
+		} else {
+			log.Println("Ошибка регистрации пользователя в БД: ", err)
+			w.Write([]byte(`{"status":"register_error"}`))
+			return
+		}
 	}
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(`{"status":"user_is_registred"}`))
