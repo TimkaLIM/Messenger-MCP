@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -124,7 +125,57 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func (a *Application) protectedHandler(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value("user_id").(int)
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"status":"ok", "message":"Доступ разрешен", "user_id": %d}`, userID)
+}
+
 // HANDLERS BLOCK END
+
+//Middleware BLOCK START
+
+func (a *Application) AuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"no token"}`))
+			return
+		}
+
+		//отрезаем Bearer
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method")
+			}
+			return []byte(a.SecretKey), nil
+		})
+
+		if err != nil || !token.Valid {
+			// Токен протух или подпись не сошлась
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		//если дошли сюда -> токен валиден, все работает, claims заполнен
+		userID := claims["user_id"].(float64)
+		log.Println("Авторизован пользователь с ID: ", userID)
+
+		//кладём id в context
+
+		ctx := context.WithValue(r.Context(), "user_id", userID)
+		r = r.WithContext(ctx)
+
+		next.ServeHTTP(w, r)
+
+	})
+}
 
 func (rw *ResponseWriter) WriteHeader(code int) {
 	rw.statusCode = code
@@ -159,6 +210,8 @@ func registerRoute(mux *http.ServeMux, methodAndPath string,
 	mux.Handle(methodAndPath, logger)
 }
 
+//MIDDLEWARE BLOCK END
+
 func ServerStart(database *sql.DB) {
 
 	secret := os.Getenv("token_key")
@@ -176,6 +229,7 @@ func ServerStart(database *sql.DB) {
 	})
 	registerRoute(mux, "POST /register", apple.RegisterUser)
 	registerRoute(mux, "POST /login", apple.LoginUser)
+	registerRoute(mux, "POST /protected", apple.AuthMiddleware(apple.protectedHandler))
 
 	//ОТКРЫТИЕ СЕРВЕРА
 	srv := &http.Server{
