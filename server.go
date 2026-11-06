@@ -97,18 +97,17 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	//Проверка пароля и логина
-	err := GetUserByUsername(a.DB, LoginUser.Username, LoginUser.Password)
+	user, err := GetUserByUsername(a.DB, LoginUser.Username, LoginUser.Password)
 	if err != nil {
 		log.Println("Неверный логин или пароль", err)
 		w.WriteHeader(400)
 		w.Write([]byte(`{"status":"Bad Login or Password"}`))
 		return
 	}
-	w.Write([]byte(`{"status":"correct login and password"}`))
 
 	claims := jwt.MapClaims{
-		"username": LoginUser.Username,
-		"exp":      time.Now().Add(time.Hour * 24).Unix(),
+		"user_id": user.ID,
+		"exp":     time.Now().Add(time.Hour * 24).Unix(),
 	}
 	//Создаем токен с алгоритмом HS256
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -121,6 +120,7 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"status":"login false"}`))
 		return
 	}
+	w.Write([]byte(`{"status":"correct login and password"}`))
 	fmt.Fprintf(w, `{"token":"%s"}`, tokenString)
 
 }
@@ -148,10 +148,33 @@ func (a *Application) CreateChatHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	//У нас есть структура с чатом, создадим запись о чате в БД
 	//Но перед этим создадим транзакцию, потому что если упадет добавление пользователя в чат, то пустая БД никому не нужна
-	_, err = a.DB.Exec("INSERT INTO chats (title) VALUES($1)", ChatInfo.Title)
+	ctx := r.Context()
+	tx, err := a.DB.BeginTx(ctx, nil)
+	if err != nil {
+		log.Println("Ошибка создания BEGIN при создании чата: ", err)
+		w.WriteHeader(500)
+		return
+	}
+	defer tx.Rollback()
+	userID := r.Context().Value("user_id").(int)
+
+	var ChatID int
+	err = tx.QueryRowContext(ctx, "INSERT INTO chats (title) VALUES($1) RETURNING id", ChatInfo.Title).Scan(&ChatID)
 	if err != nil {
 		log.Println("Ошибка создания чата в БД: ", err)
 		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO chat_members (chat_id,user_id) VALUES($1,$2)", ChatID, userID)
+	if err != nil {
+		log.Println("Ошибка добавления пользователя в chat_members: ", err)
+		w.WriteHeader(500)
+		return
+	}
+	err = tx.Commit()
+	if err != nil {
+		log.Println("Ошибка коммита к БД(создание чата): ", err)
+		w.WriteHeader(500)
 		return
 	}
 	w.Write([]byte(`{"status":"Chat is created!"}`))
@@ -189,12 +212,12 @@ func (a *Application) AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		//если дошли сюда -> токен валиден, все работает, claims заполнен
-		userName := claims["username"].(string)
-		log.Println("Авторизован пользователь с Username: ", userName)
+		userID := int(claims["user_id"].(float64))
+		log.Println("Авторизован пользователь с id: ", userID)
 
 		//кладём id в context
 
-		ctx := context.WithValue(r.Context(), "username", userName)
+		ctx := context.WithValue(r.Context(), "user_id", userID)
 		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
