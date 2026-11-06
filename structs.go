@@ -27,3 +27,8 @@ type User2 struct {
 	PasswordHash string    `json:"-"` //- означает никогда не отадавать это поле в json клиенту
 	CreatedAt    time.Time `json:"created_at"`
 }
+
+// chat structure
+type Chat struct {
+	Title string `json:"title"`
+}

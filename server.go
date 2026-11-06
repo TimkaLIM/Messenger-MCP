@@ -126,10 +126,35 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Application) protectedHandler(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(int)
+	userName := r.Context().Value("username").(string)
 
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status":"ok", "message":"Доступ разрешен", "user_id": %d}`, userID)
+	fmt.Fprintf(w, `{"status":"ok", "message":"Доступ разрешен", "username": %s}`, userName)
+}
+
+//CHATS
+
+//CREATE CHAT
+
+func (a *Application) CreateChatHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	//Принимаем на вход JSON, название чата
+	var ChatInfo Chat
+	err := json.NewDecoder(r.Body).Decode(&ChatInfo)
+	if err != nil {
+		log.Println("Ошибка декодирования информации о чате: ", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	//У нас есть структура с чатом, создадим запись о чате в БД
+	//Но перед этим создадим транзакцию, потому что если упадет добавление пользователя в чат, то пустая БД никому не нужна
+	_, err = a.DB.Exec("INSERT INTO chats (title) VALUES($1)", ChatInfo.Title)
+	if err != nil {
+		log.Println("Ошибка создания чата в БД: ", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write([]byte(`{"status":"Chat is created!"}`))
 }
 
 // HANDLERS BLOCK END
@@ -164,12 +189,12 @@ func (a *Application) AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		//если дошли сюда -> токен валиден, все работает, claims заполнен
-		userID := claims["user_id"].(float64)
-		log.Println("Авторизован пользователь с ID: ", userID)
+		userName := claims["username"].(string)
+		log.Println("Авторизован пользователь с Username: ", userName)
 
 		//кладём id в context
 
-		ctx := context.WithValue(r.Context(), "user_id", userID)
+		ctx := context.WithValue(r.Context(), "username", userName)
 		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
@@ -216,20 +241,23 @@ func ServerStart(database *sql.DB) {
 
 	secret := os.Getenv("token_key")
 	mux := http.NewServeMux()
-	apple := Application{
+	app := Application{
 		DB:        database,
 		SecretKey: secret,
 	}
 
 	//РЕГИСТРАЦИЯ ХЭНДЛЕРОВ
-	registerRoute(mux, "GET /health", apple.healthHandler)
+	registerRoute(mux, "GET /health", app.healthHandler)
 	registerRoute(mux, "POST /echo", echoHandler)
 	registerRoute(mux, "GET /boom", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
-	registerRoute(mux, "POST /register", apple.RegisterUser)
-	registerRoute(mux, "POST /login", apple.LoginUser)
-	registerRoute(mux, "POST /protected", apple.AuthMiddleware(apple.protectedHandler))
+	registerRoute(mux, "POST /register", app.RegisterUser)
+	registerRoute(mux, "POST /login", app.LoginUser)
+	protectedHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.protectedHandler)))
+	mux.Handle("POST /protected", protectedHandler)
+	craftChatHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.CreateChatHandler)))
+	mux.Handle("POST /createchat", craftChatHandler)
 
 	//ОТКРЫТИЕ СЕРВЕРА
 	srv := &http.Server{
