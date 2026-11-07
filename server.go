@@ -313,20 +313,75 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 
 func (a *Application) GetMessages(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-type", "application/json")
+	var (
+		beforeStr string
+		limitStr  string
+		err       error
+	)
+	//BEFORE
+	beforeStr = r.URL.Query().Get("before")
+	var before int
+	if beforeStr == "" {
+		before = 0
+	} else {
+		before, err = strconv.Atoi(beforeStr)
+		if err != nil {
+			log.Println("Ошибка присвоения before(int): ", err)
+			before = 0
+		}
+	}
+	//LIMIT
+	limitStr = r.URL.Query().Get("limit")
+	var limit int
+	if limitStr == "" {
+		limit = 50
+	} else {
+		limit, err = strconv.Atoi(limitStr)
+		if err != nil {
+			log.Println("Ошибка присвоения limit(str): ", err)
+			limit = 50
+		}
+	}
+
 	ctx := r.Context()
-	chatID := r.PathValue("id")
-	rows, err := a.DB.QueryContext(ctx, "SELECT id,sender_id,text,created_at FROM messages "+
-		"WHERE chat_id = $1 ORDER BY created_at", chatID)
+	chatIDStr := r.PathValue("id")
+	chatID, err := strconv.Atoi(chatIDStr)
+	if err != nil {
+		log.Println("Ошибка превращения id чата из строки в число: ", err)
+		w.WriteHeader(500)
+		return
+	}
+	query := "SELECT id,sender_id,text,created_at FROM messages WHERE chat_id = $1"
+	args := []any{chatID}
+	if before > 0 {
+		query += " AND id < $2"
+		args = append(args, before)
+	}
+	query += " ORDER BY id ASC LIMIT $" + strconv.Itoa(len(args)+1)
+	args = append(args, limit)
+	rows, err := a.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		log.Println("Ошибка выгрузки сообщений из БД: ", err)
 		w.WriteHeader(500)
 		return
 	}
+	defer rows.Close()
 	var messages []MessagesResponse
 	for rows.Next() {
 		var message MessagesResponse
-		rows.Scan(&message.ID, &message.SenderID, &message.Text, &message.CreatedAT)
+		err = rows.Scan(&message.ID, &message.SenderID, &message.Text, &message.CreatedAT)
+		if err != nil {
+			log.Println("Ошибка выгрузки сообщения(1): ", err)
+			w.WriteHeader(500)
+			return
+		}
 		messages = append(messages, message)
+	}
+	if rows.Err() != nil {
+		log.Println("Ошибка при чтении результатов из БД: ", rows.Err())
+		w.WriteHeader(500)
+		return
+
 	}
 	err = json.NewEncoder(w).Encode(messages)
 	if err != nil {
