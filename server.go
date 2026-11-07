@@ -317,10 +317,11 @@ func (a *Application) GetMessages(w http.ResponseWriter, r *http.Request) {
 		beforeStr string
 		limitStr  string
 		err       error
+		before    int
+		limit     int
 	)
 	//BEFORE
 	beforeStr = r.URL.Query().Get("before")
-	var before int
 	if beforeStr == "" {
 		before = 0
 	} else {
@@ -332,7 +333,6 @@ func (a *Application) GetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	//LIMIT
 	limitStr = r.URL.Query().Get("limit")
-	var limit int
 	if limitStr == "" {
 		limit = 50
 	} else {
@@ -354,7 +354,7 @@ func (a *Application) GetMessages(w http.ResponseWriter, r *http.Request) {
 	query := "SELECT id,sender_id,text,created_at FROM messages WHERE chat_id = $1"
 	args := []any{chatID}
 	if before > 0 {
-		query += " AND id < $2"
+		query += " AND id <= $2"
 		args = append(args, before)
 	}
 	query += " ORDER BY id ASC LIMIT $" + strconv.Itoa(len(args)+1)
