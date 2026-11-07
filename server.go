@@ -139,7 +139,7 @@ func (a *Application) protectedHandler(w http.ResponseWriter, r *http.Request) {
 func (a *Application) CreateChatHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	//Принимаем на вход JSON, название чата
-	var ChatInfo Chat
+	var ChatInfo CreateChatRequest
 	err := json.NewDecoder(r.Body).Decode(&ChatInfo)
 	if err != nil {
 		log.Println("Ошибка декодирования информации о чате: ", err)
@@ -179,6 +179,44 @@ func (a *Application) CreateChatHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Write([]byte(`{"status":"Chat is created!"}`))
 }
+
+func (a *Application) SelectAllChatsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	ctx := r.Context()
+	userID := r.Context().Value("user_id").(int)
+	rows, err := a.DB.QueryContext(ctx, "SELECT cm.chat_id,c.title FROM chat_members cm JOIN chats c ON cm.chat_id = c.id\n"+
+		"WHERE cm.user_id = $1", userID)
+	if err != nil {
+		log.Println("Ошибка вывода всех чатов из БД: ", err)
+		w.WriteHeader(500)
+		return
+	}
+	defer rows.Close()
+	var chats_list []ChatResponse
+	var chat_id int
+	var chat_title string
+	for rows.Next() {
+		if err = rows.Scan(&chat_id, &chat_title); err != nil {
+			log.Println("Ошибка сканирования id&title чата: ", err)
+			continue
+		}
+		chat := ChatResponse{ID: chat_id, Title: chat_title}
+		chats_list = append(chats_list, chat)
+	}
+	if err = rows.Err(); err != nil {
+		log.Println("Ошибка при чтении списка чатов:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	err = json.NewEncoder(w).Encode(chats_list)
+	if err != nil {
+		log.Println("Ошибка энкодирования чатов в JSON: ", err)
+		w.WriteHeader(500)
+		return
+	}
+}
+
+//
 
 // HANDLERS BLOCK END
 
@@ -281,6 +319,8 @@ func ServerStart(database *sql.DB) {
 	mux.Handle("POST /protected", protectedHandler)
 	craftChatHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.CreateChatHandler)))
 	mux.Handle("POST /createchat", craftChatHandler)
+	SelectChatsHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.SelectAllChatsHandler)))
+	mux.Handle("GET /mychats", SelectChatsHandler)
 
 	//ОТКРЫТИЕ СЕРВЕРА
 	srv := &http.Server{
