@@ -311,7 +311,30 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-//
+func (a *Application) GetMessages(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-type", "application/json")
+	ctx := r.Context()
+	chatID := r.PathValue("id")
+	rows, err := a.DB.QueryContext(ctx, "SELECT id,sender_id,text,created_at FROM messages "+
+		"WHERE chat_id = $1 ORDER BY created_at", chatID)
+	if err != nil {
+		log.Println("Ошибка выгрузки сообщений из БД: ", err)
+		w.WriteHeader(500)
+		return
+	}
+	var messages []MessagesResponse
+	for rows.Next() {
+		var message MessagesResponse
+		rows.Scan(&message.ID, &message.SenderID, &message.Text, &message.CreatedAT)
+		messages = append(messages, message)
+	}
+	err = json.NewEncoder(w).Encode(messages)
+	if err != nil {
+		log.Println("Ошибка, Энкодинга сообщений: ", err)
+		w.WriteHeader(500)
+		return
+	}
+}
 
 // HANDLERS BLOCK END
 
@@ -419,7 +442,9 @@ func ServerStart(database *sql.DB) {
 	joinChatHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.JoinToChatHandler)))
 	mux.Handle("POST /chats/jointochat", joinChatHandler)
 	MessageHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.SendMessageHandler)))
-	mux.Handle("POST /chats/{id}/messages", MessageHandler)
+	mux.Handle("POST /chats/{id}/message", MessageHandler)
+	GetMessagesHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.GetMessages)))
+	mux.Handle("GET /chats/{id}/messages", GetMessagesHandler)
 
 	//ОТКРЫТИЕ СЕРВЕРА
 	srv := &http.Server{
