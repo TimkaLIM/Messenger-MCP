@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"time"
 
@@ -159,7 +160,13 @@ func (a *Application) CreateChatHandler(w http.ResponseWriter, r *http.Request) 
 	userID := r.Context().Value("user_id").(int)
 
 	var ChatID int
-	err = tx.QueryRowContext(ctx, "INSERT INTO chats (title) VALUES($1) RETURNING id", ChatInfo.Title).Scan(&ChatID)
+	invite_code, err := GenerateInviteCode(6)
+	if err != nil {
+		log.Println("Ошибка генерации кода приглашения: ", err)
+		w.WriteHeader(500)
+		return
+	}
+	err = tx.QueryRowContext(ctx, "INSERT INTO chats (title,invite_code) VALUES($1,$2) RETURNING id", ChatInfo.Title, invite_code).Scan(&ChatID)
 	if err != nil {
 		log.Println("Ошибка создания чата в БД: ", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -214,6 +221,94 @@ func (a *Application) SelectAllChatsHandler(w http.ResponseWriter, r *http.Reque
 		w.WriteHeader(500)
 		return
 	}
+}
+
+func (a *Application) JoinToChatHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-type", "application/json")
+	var Request JoinChat
+	err := json.NewDecoder(r.Body).Decode(&Request)
+	if err != nil {
+		log.Println("Ошибка декодирования заявки в чат: ", err)
+		w.WriteHeader(400)
+		return
+	}
+	ctx := r.Context()
+	var chatID int
+	err = a.DB.QueryRowContext(ctx, "SELECT id FROM chats WHERE invite_code = $1", Request.InviteCode).Scan(&chatID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":"invite code not found"}`))
+			return
+		}
+		log.Println("Ошибка БД:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	userID := r.Context().Value("user_id").(int)
+	_, err = a.DB.ExecContext(ctx, "INSERT INTO chat_members (chat_id,user_id) VALUES($1,$2)", chatID, userID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			w.WriteHeader(http.StatusConflict) // 409
+			w.Write([]byte(`{"error":"you are already in this chat"}`))
+			return
+		}
+		// Если другая ошибка — 500
+		log.Println("Ошибка добавления в чат:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write([]byte(`{"status":"joined_success"}`))
+
+}
+
+func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	chatIDStr := r.PathValue("id")
+	chatID, err := strconv.Atoi(chatIDStr)
+	if err != nil {
+		log.Println("Ошибка создания id чата(отправка сообщения): ", err)
+		w.WriteHeader(400)
+		return
+	}
+	var message ReceivedMessage
+	err = json.NewDecoder(r.Body).Decode(&message)
+	if err != nil {
+		log.Println("Ошибка принятия сообщения: ", err)
+		w.WriteHeader(400)
+		return
+	}
+	senderID := r.Context().Value("user_id").(int)
+	ctx := r.Context()
+	var exists int
+	err = a.DB.QueryRowContext(ctx, "SELECT 1 FROM chat_members WHERE user_id = $1 AND chat_id = $2", senderID, chatID).Scan(&exists)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Println("Пользователь пытается писать в чужой чат!")
+			w.WriteHeader(http.StatusForbidden) // 403
+			w.Write([]byte(`{"error":"access denied"}`))
+			return
+		}
+		// 5. Если это другая ошибка (база упала) — возвращаем 500
+		log.Println("Ошибка БД при проверке участника:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	var message_id int
+	var createdAT time.Time
+	err = a.DB.QueryRowContext(ctx, "INSERT INTO messages (chat_id,sender_id,text) VALUES($1,$2,$3) RETURNING id,created_at",
+		chatID, senderID, message.Text).Scan(&message_id, &createdAT)
+	if err != nil {
+		log.Println("Ошибка добавления сообщения в messages: ", err)
+		w.WriteHeader(500)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	err = json.NewEncoder(w).Encode(map[string]any{
+		"id":         message_id,
+		"created_at": createdAT,
+	})
 }
 
 //
@@ -318,9 +413,13 @@ func ServerStart(database *sql.DB) {
 	protectedHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.protectedHandler)))
 	mux.Handle("POST /protected", protectedHandler)
 	craftChatHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.CreateChatHandler)))
-	mux.Handle("POST /createchat", craftChatHandler)
+	mux.Handle("POST /chats/createchat", craftChatHandler)
 	SelectChatsHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.SelectAllChatsHandler)))
-	mux.Handle("GET /mychats", SelectChatsHandler)
+	mux.Handle("GET /chats/mychats", SelectChatsHandler)
+	joinChatHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.JoinToChatHandler)))
+	mux.Handle("POST /chats/jointochat", joinChatHandler)
+	MessageHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.SendMessageHandler)))
+	mux.Handle("POST /chats/{id}/messages", MessageHandler)
 
 	//ОТКРЫТИЕ СЕРВЕРА
 	srv := &http.Server{

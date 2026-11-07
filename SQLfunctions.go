@@ -1,10 +1,26 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"math/big"
 
 	"golang.org/x/crypto/bcrypt"
 )
+
+const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func GenerateInviteCode(length int) (string, error) {
+	result := make([]byte, length)
+	for i := range result {
+		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		if err != nil {
+			return "", err
+		}
+		result[i] = letters[num.Int64()]
+	}
+	return string(result), nil
+}
 
 func GetUserByUsername(db *sql.DB, login string, password string) (*User2, error) {
 	var user User2
@@ -15,5 +31,4 @@ func GetUserByUsername(db *sql.DB, login string, password string) (*User2, error
 	}
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	return &user, err
-
 }
