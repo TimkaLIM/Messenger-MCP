@@ -21,12 +21,21 @@ import (
 )
 
 // HANDLERS BLOCK START
+
+func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := a.DB.PingContext(r.Context()); err != nil {
+		log.Println("Ошибка пинга в healthHandler:", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"status":"db_error"}`))
+		return
+	}
+	w.Write([]byte(`{"status":"ok"}`))
+}
+
 func echoHandler(w http.ResponseWriter, r *http.Request) {
-
 	r.Body = http.MaxBytesReader(w, r.Body, 1048576)
-
 	var book map[string]any
-
 	if jsonErr := json.NewDecoder(r.Body).Decode(&book); jsonErr != nil {
 		log.Println("Ошибка декодинга echo:", jsonErr)
 		w.WriteHeader(http.StatusBadRequest)
@@ -37,17 +46,6 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println("Ошибка энкодинга echo: ", jsonErr2)
 		return
 	}
-}
-
-func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := a.DB.Ping(); err != nil {
-		log.Println("Ошибка пинга в healthHandler:", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"status":"db_error"}`))
-		return
-	}
-	w.Write([]byte(`{"status":"ok"}`))
 }
 
 func (a *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +65,7 @@ func (a *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var pgErr *pgconn.PgError
-	_, err = a.DB.Exec("INSERT INTO users (username,password_hash) VALUES($1,$2)",
+	_, err = a.DB.ExecContext(r.Context(), "INSERT INTO users (username,password_hash) VALUES($1,$2)",
 		NewUser.Username, hash)
 	if err != nil {
 		if errors.As(err, &pgErr) {
@@ -98,7 +96,7 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	//Проверка пароля и логина
-	user, err := GetUserByUsername(a.DB, LoginUser.Username, LoginUser.Password)
+	user, err := GetUserByUsername(r.Context(), a.DB, LoginUser.Username, LoginUser.Password)
 	if err != nil {
 		log.Println("Неверный логин или пароль", err)
 		w.WriteHeader(400)
@@ -471,7 +469,7 @@ func registerRoute(mux *http.ServeMux, methodAndPath string,
 
 //MIDDLEWARE BLOCK END
 
-func ServerStart(database *sql.DB) {
+func ServerStart(database DBInterface) {
 
 	secret := os.Getenv("token_key")
 	mux := http.NewServeMux()

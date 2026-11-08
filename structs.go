@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"time"
@@ -12,7 +13,7 @@ type ResponseWriter struct {
 }
 
 type Application struct {
-	DB        *sql.DB
+	DB        DBInterface
 	SecretKey string
 }
 
@@ -51,4 +52,14 @@ type MessagesResponse struct {
 	SenderID  int       `json:"sender_id"`
 	Text      string    `json:"text"`
 	CreatedAT time.Time `json:"created_at"`
+}
+
+//интерфейс БД (для тестов)
+
+type DBInterface interface {
+	PingContext(context.Context) error
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }

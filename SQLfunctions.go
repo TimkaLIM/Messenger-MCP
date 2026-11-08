@@ -1,8 +1,8 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
-	"database/sql"
 	"math/big"
 
 	"golang.org/x/crypto/bcrypt"
@@ -22,9 +22,9 @@ func GenerateInviteCode(length int) (string, error) {
 	return string(result), nil
 }
 
-func GetUserByUsername(db *sql.DB, login string, password string) (*User2, error) {
+func GetUserByUsername(ctx context.Context, db DBInterface, login string, password string) (*User2, error) {
 	var user User2
-	err := db.QueryRow("SELECT id,username,password_hash FROM users WHERE username = $1",
+	err := db.QueryRowContext(ctx, "SELECT id,username,password_hash FROM users WHERE username = $1",
 		login).Scan(&user.ID, &user.Username, &user.PasswordHash)
 	if err != nil {
 		return &user, err
