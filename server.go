@@ -470,7 +470,6 @@ func registerRoute(mux *http.ServeMux, methodAndPath string,
 //MIDDLEWARE BLOCK END
 
 func ServerStart(database DBInterface) {
-
 	secret := os.Getenv("token_key")
 	mux := http.NewServeMux()
 	app := Application{
