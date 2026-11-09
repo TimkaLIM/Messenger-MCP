@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest #запустить это все на ubuntu
     steps:
     - name: Checkout code #-name это по сути просто имя этапа
-      uses: actions.checkout@v4 #делаем копию нашего репозитория
+      uses: actions/checkout@v4 #делаем копию нашего репозитория
     - name: Set up Go
       uses: actions/setup-go@v5 #Специальный скрипт, который устанавливает Go нужной версии на виртуалку
       with:
