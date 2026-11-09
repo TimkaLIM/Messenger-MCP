@@ -1,0 +1,22 @@
+name: Go CI
+
+on: #выполняй этот скрипт каждый раз, когда происходит...
+  push:
+    branches: ["main"] #main это ветка
+  pull_request:
+    branches: ["main"]
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest #запустить это все на ubuntu
+    steps:
+    - name: Checkout code #-name это по сути просто имя этапа
+      uses: actions.checkout@v4 #делаем копию нашего репозитория
+    - name: Set up Go
+      uses: actions/setup-go@v5 #Специальный скрипт, который устанавливает Go нужной версии на виртуалку
+      with:
+        go-version: '1.26.8'
+    - name: install dependencies
+      run: go mod download
+    - name: Run tests
+      run: go test -v ./... #означает пройти по всем папкам и запустить все тесты
+
