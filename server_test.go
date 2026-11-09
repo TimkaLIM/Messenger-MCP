@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,30 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
-
-type MockDB struct {
-	ReturnError error
-}
-
-func (m *MockDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	//если мы положили ошибку в поле, возвращаем её
-	if m.ReturnError != nil {
-		return nil, m.ReturnError
-	} //иначе все окей
-	return nil, nil
-}
-func (m *MockDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return nil, nil
-}
-func (m *MockDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	return nil
-}
-func (m *MockDB) PingContext(ctx context.Context) error {
-	return nil
-}
-func (m *MockDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	return nil, nil
-}
 
 func TestHealthHandler(t *testing.T) {
 	req := httptest.NewRequest("GET", "/health", nil) //аналог r *http.Request
@@ -121,4 +95,38 @@ func TestRegisterUser(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoginUser(t *testing.T) {
+	tests := []struct {
+		name           string
+		requestBody    string
+		mockReturnErr  error
+		expectedStatus int
+	}{
+		{
+			name:           "Битый JSON",
+			requestBody:    `{"username":"newuser2",password:1234`,
+			mockReturnErr:  nil,
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB := &MockDB{ReturnError: tt.mockReturnErr}
+			app := &Application{
+				DB:        mockDB,
+				SecretKey: "test",
+			}
+			req := httptest.NewRequest("POST", "/login",
+				strings.NewReader(tt.requestBody))
+			rr := httptest.NewRecorder()
+			app.LoginUser(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("Ожидали код: %d, получили: %d", tt.expectedStatus, rr.Code)
+			}
+		})
+	}
+
 }

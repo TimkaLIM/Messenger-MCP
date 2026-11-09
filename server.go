@@ -92,7 +92,7 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 	var LoginUser User
 	jsonErr := json.NewDecoder(r.Body).Decode(&LoginUser)
 	if jsonErr != nil {
-		log.Println("Ошибка декодирования логика/пароля: ", jsonErr)
+		log.Println("Ошибка декодирования логина/пароля: ", jsonErr)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
