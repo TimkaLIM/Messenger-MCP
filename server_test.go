@@ -3,15 +3,24 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
-type MockDB struct{}
+type MockDB struct {
+	ReturnError error
+}
 
 func (m *MockDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	//если мы положили ошибку в поле, возвращаем её
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	} //иначе все окей
 	return nil, nil
 }
 func (m *MockDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
@@ -53,5 +62,63 @@ func TestEchoHandler(t *testing.T) {
 	}
 	if !(strings.Contains(rr.Body.String(), "hello world!")) {
 		t.Errorf("В ответе нет ожидаемого сообщения: %s", rr.Body.String())
+	}
+}
+
+func TestRegisterUser(t *testing.T) {
+	tests := []struct {
+		name           string
+		requestBody    string
+		mockReturnErr  error
+		expectedStatus int
+	}{
+		{
+			name:           "Успешная регистрация",
+			requestBody:    `{"username":"newuser","password":"123"}`,
+			mockReturnErr:  nil,
+			expectedStatus: http.StatusCreated,
+		},
+		{
+			name:           "Битый JSON",
+			requestBody:    `{"username":"newuser2",password:1234`,
+			mockReturnErr:  nil,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Пользователь уже существует",
+			requestBody:    `{"username":"admin","password":"123"}`,
+			mockReturnErr:  &pgconn.PgError{Code: "23505"}, //Имитируем ошибку дубликата
+			expectedStatus: http.StatusConflict,            // 409
+		},
+		{
+			name:           "Ошибка базы данных",
+			requestBody:    `{"username":"newuser","password":"123"}`,
+			mockReturnErr:  errors.New("connection refused"), //Имитируем падение базы
+			expectedStatus: http.StatusInternalServerError,   //500
+
+		},
+		{
+			name:           "Ошибка создания хэша пароля",
+			requestBody:    `{"username":"newuser","password":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`,
+			mockReturnErr:  nil,
+			expectedStatus: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB := &MockDB{ReturnError: tt.mockReturnErr}
+			app := &Application{
+				DB:        mockDB,
+				SecretKey: "test",
+			}
+			req := httptest.NewRequest("POST", "/register", strings.NewReader(tt.requestBody))
+			rr := httptest.NewRecorder()
+
+			app.RegisterUser(rr, req)
+
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("Ожидали код %d, получили %d", tt.expectedStatus, rr.Code)
+			}
+		})
 	}
 }

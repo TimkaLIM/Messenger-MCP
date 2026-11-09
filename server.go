@@ -77,6 +77,7 @@ func (a *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			log.Println("Ошибка регистрации пользователя в БД: ", err)
+			w.WriteHeader(500)
 			w.Write([]byte(`{"status":"register_error"}`))
 			return
 		}
