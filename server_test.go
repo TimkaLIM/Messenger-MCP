@@ -128,5 +128,36 @@ func TestLoginUser(t *testing.T) {
 			}
 		})
 	}
+}
 
+func TestCreateChatHandler(t *testing.T) {
+	tests := []struct {
+		name           string
+		requestBody    string
+		MockReturnErr  error
+		expectedStatus int
+	}{
+		{
+			name:           "Битый JSON",
+			requestBody:    `{"title":13898"`,
+			MockReturnErr:  nil,
+			expectedStatus: 400,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/createchat",
+				strings.NewReader(tt.requestBody))
+			rr := httptest.NewRecorder()
+			mockDB := &MockDB{ReturnError: tt.MockReturnErr}
+			app := &Application{
+				DB:        mockDB,
+				SecretKey: "test",
+			}
+			app.CreateChatHandler(rr, req)
+			if rr.Code != tt.expectedStatus {
+				t.Errorf("Ожидали код: %d, получили %d", tt.expectedStatus, rr.Code)
+			}
+		})
+	}
 }
