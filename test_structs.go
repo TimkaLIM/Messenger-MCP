@@ -26,5 +26,8 @@ func (m *MockDB) PingContext(ctx context.Context) error {
 	return nil
 }
 func (m *MockDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	if m.ReturnError != nil {
+		return nil, m.ReturnError
+	}
 	return nil, nil
 }

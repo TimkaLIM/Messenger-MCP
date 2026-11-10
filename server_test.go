@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -142,6 +143,12 @@ func TestCreateChatHandler(t *testing.T) {
 			requestBody:    `{"title":13898"`,
 			MockReturnErr:  nil,
 			expectedStatus: 400,
+		},
+		{
+			name:           "Ошибка создания Begin",
+			requestBody:    `{"title":"chat"}`,
+			MockReturnErr:  sql.ErrConnDone,
+			expectedStatus: 500,
 		},
 	}
 	for _, tt := range tests {
