@@ -20,6 +20,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+type contextKey string
+
+const userIDKey contextKey = "user_id"
+
 // HANDLERS BLOCK START
 
 func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -303,7 +307,7 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(400)
 		return
 	}
-	senderID := r.Context().Value("user_id").(int)
+	senderID := r.Context().Value(userIDKey).(int)
 	ctx := r.Context()
 	var exists int
 	err = a.DB.QueryRowContext(ctx, "SELECT 1 FROM chat_members WHERE user_id = $1 AND chat_id = $2", senderID, chatID).Scan(&exists)
@@ -329,10 +333,15 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-	err = json.NewEncoder(w).Encode(map[string]any{
+	if err = json.NewEncoder(w).Encode(map[string]any{
 		"id":         messageID,
 		"created_at": createdAT,
-	})
+	}); err != nil {
+		log.Println("Ошибка энкодинга сообщения: ", err)
+		w.WriteHeader(500)
+		return
+	}
+
 }
 
 func (a *Application) GetMessages(w http.ResponseWriter, r *http.Request) {
@@ -456,11 +465,10 @@ func (a *Application) AuthMiddleware(next http.Handler) http.Handler {
 
 		//кладём id в context
 
-		ctx := context.WithValue(r.Context(), "user_id", userID)
+		ctx := context.WithValue(r.Context(), userIDKey, userID)
 		r = r.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
-
 	})
 }
 
