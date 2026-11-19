@@ -17,6 +17,11 @@ jobs:
         go-version: '1.26.8'
     - name: install dependencies
       run: go mod download
-    - name: Run tests
-      run: go test -v ./... #означает пройти по всем папкам и запустить все тесты
+    - name: Run tests with race detector
+      run: go test -race ./... #означает пройти по всем папкам и запустить все тесты
+    - name: Run golagnci-lint
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: latest
+
 
