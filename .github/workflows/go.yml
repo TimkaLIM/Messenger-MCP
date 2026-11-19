@@ -20,8 +20,8 @@ jobs:
     - name: Run tests with race detector
       run: go test -race ./... #означает пройти по всем папкам и запустить все тесты
     - name: Run golagnci-lint
-      uses: golangci/golangci-lint-action@v6
+      uses: golangci/golangci-lint-action@v7
       with:
-        version: v1.64.8
+        version: v2.15.0
 
 
