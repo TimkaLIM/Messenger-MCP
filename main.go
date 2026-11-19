@@ -26,7 +26,11 @@ func main() {
 		log.Println("Ошибка открытия пула: ", err)
 		return
 	}
-	defer db.Close()
+	defer func() {
+		if err = db.Close(); err != nil {
+			log.Println("Ошибка закрытия базы данных: ", err)
+		}
+	}()
 
 	db.SetMaxOpenConns(20)
 	db.SetMaxIdleConns(5)

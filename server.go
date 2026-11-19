@@ -27,10 +27,15 @@ func (a *Application) healthHandler(w http.ResponseWriter, r *http.Request) {
 	if err := a.DB.PingContext(r.Context()); err != nil {
 		log.Println("Ошибка пинга в healthHandler:", err)
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"status":"db_error"}`))
+		if _, err = w.Write([]byte(`{"status":"db_error"}`)); err != nil {
+			log.Println("Ошибка записи w.Write: ", err)
+		}
 		return
 	}
-	w.Write([]byte(`{"status":"ok"}`))
+	if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
+		log.Println("Ошибка записи w.Write: ", err)
+	}
+
 }
 
 func echoHandler(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +54,11 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Println("Ошибка закрытия r.Body: ", err)
+		}
+	}()
 	w.Header().Set("Content-Type", "application/json")
 	var NewUser User
 	err := json.NewDecoder(r.Body).Decode(&NewUser)
@@ -72,22 +81,32 @@ func (a *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 			if pgErr.Code == "23505" {
 				log.Println("Ошибка регистрации пользователя в БД(дубликат): ", err)
 				w.WriteHeader(409)
-				w.Write([]byte(`{"status":"name is occupied"}`))
+				if _, err = w.Write([]byte(`{"status":"name is occupied"}`)); err != nil {
+					log.Println("Ошибка записи w.Write: ", err)
+				}
 				return
 			}
 		} else {
 			log.Println("Ошибка регистрации пользователя в БД: ", err)
 			w.WriteHeader(500)
-			w.Write([]byte(`{"status":"register_error"}`))
+			if _, err = w.Write([]byte(`{"status":"register_error"}`)); err != nil {
+				log.Println("Ошибка записи w.Write: ", err)
+			}
 			return
 		}
 	}
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte(`{"status":"user_is_registred"}`))
+	if _, err = w.Write([]byte(`{"status":"user_is_registred"}`)); err != nil {
+		log.Println("Ошибка записи w.Write: ", err)
+	}
 }
 
 func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Println("Ошибка закрытия r.Body: ", err)
+		}
+	}()
 	w.Header().Set("Content-Type", "application/json")
 	var LoginUser User
 	jsonErr := json.NewDecoder(r.Body).Decode(&LoginUser)
@@ -101,7 +120,7 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Неверный логин или пароль", err)
 		w.WriteHeader(400)
-		w.Write([]byte(`{"status":"Bad Login or Password"}`))
+		_, _ = w.Write([]byte(`{"status":"Bad Login or Password"}`))
 		return
 	}
 
@@ -117,11 +136,11 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println("Ошибка создания токена: ", err)
 		w.WriteHeader(500)
-		w.Write([]byte(`{"status":"login false"}`))
+		_, _ = w.Write([]byte(`{"status":"login false"}`))
 		return
 	}
-	w.Write([]byte(`{"status":"correct login and password"}`))
-	fmt.Fprintf(w, `{"token":"%s"}`, tokenString)
+	_, _ = w.Write([]byte(`{"status":"correct login and password"}`))
+	_, _ = fmt.Fprintf(w, `{"token":"%s"}`, tokenString)
 
 }
 
@@ -129,7 +148,7 @@ func (a *Application) protectedHandler(w http.ResponseWriter, r *http.Request) {
 	userName := r.Context().Value("username").(string)
 
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status":"ok", "message":"Доступ разрешен", "username": %s}`, userName)
+	_, _ = fmt.Fprintf(w, `{"status":"ok", "message":"Доступ разрешен", "username": %s}`, userName)
 }
 
 //CHATS
@@ -155,7 +174,11 @@ func (a *Application) CreateChatHandler(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(500)
 		return
 	}
-	defer tx.Rollback()
+	defer func() {
+		if err = tx.Rollback(); err != nil {
+			log.Println("Ошибка закрытия tx.Rollback: ", err)
+		}
+	}()
 	userID := r.Context().Value("user_id").(int)
 
 	var ChatID int
@@ -183,7 +206,7 @@ func (a *Application) CreateChatHandler(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(500)
 		return
 	}
-	w.Write([]byte(`{"status":"Chat is created!"}`))
+	_, _ = w.Write([]byte(`{"status":"Chat is created!"}`))
 }
 
 func (a *Application) SelectAllChatsHandler(w http.ResponseWriter, r *http.Request) {
@@ -197,16 +220,18 @@ func (a *Application) SelectAllChatsHandler(w http.ResponseWriter, r *http.Reque
 		w.WriteHeader(500)
 		return
 	}
-	defer rows.Close()
+	defer func() {
+		if err = rows.Close(); err != nil {
+			log.Println("Ошибка закрытия rows: ", err)
+		}
+	}()
 	var chats_list []ChatResponse
-	var chat_id int
-	var chat_title string
 	for rows.Next() {
-		if err = rows.Scan(&chat_id, &chat_title); err != nil {
+		var chat ChatResponse
+		if err = rows.Scan(&chat.ID, &chat.Title); err != nil {
 			log.Println("Ошибка сканирования id&title чата: ", err)
 			continue
 		}
-		chat := ChatResponse{ID: chat_id, Title: chat_title}
 		chats_list = append(chats_list, chat)
 	}
 	if err = rows.Err(); err != nil {
@@ -237,7 +262,7 @@ func (a *Application) JoinToChatHandler(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte(`{"error":"invite code not found"}`))
+			_, _ = w.Write([]byte(`{"error":"invite code not found"}`))
 			return
 		}
 		log.Println("Ошибка БД:", err)
@@ -250,7 +275,7 @@ func (a *Application) JoinToChatHandler(w http.ResponseWriter, r *http.Request) 
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			w.WriteHeader(http.StatusConflict) // 409
-			w.Write([]byte(`{"error":"you are already in this chat"}`))
+			_, _ = w.Write([]byte(`{"error":"you are already in this chat"}`))
 			return
 		}
 		// Если другая ошибка — 500
@@ -258,7 +283,7 @@ func (a *Application) JoinToChatHandler(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.Write([]byte(`{"status":"joined_success"}`))
+	_, _ = w.Write([]byte(`{"status":"joined_success"}`))
 
 }
 
@@ -286,7 +311,7 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 		if errors.Is(err, sql.ErrNoRows) {
 			log.Println("Пользователь пытается писать в чужой чат!")
 			w.WriteHeader(http.StatusForbidden) // 403
-			w.Write([]byte(`{"error":"access denied"}`))
+			_, _ = w.Write([]byte(`{"error":"access denied"}`))
 			return
 		}
 		// 5. Если это другая ошибка (база упала) — возвращаем 500
@@ -294,10 +319,10 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	var message_id int
+	var messageID int
 	var createdAT time.Time
 	err = a.DB.QueryRowContext(ctx, "INSERT INTO messages (chat_id,sender_id,text) VALUES($1,$2,$3) RETURNING id,created_at",
-		chatID, senderID, message.Text).Scan(&message_id, &createdAT)
+		chatID, senderID, message.Text).Scan(&messageID, &createdAT)
 	if err != nil {
 		log.Println("Ошибка добавления сообщения в messages: ", err)
 		w.WriteHeader(500)
@@ -305,7 +330,7 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 	}
 	w.WriteHeader(http.StatusCreated)
 	err = json.NewEncoder(w).Encode(map[string]any{
-		"id":         message_id,
+		"id":         messageID,
 		"created_at": createdAT,
 	})
 }
@@ -364,7 +389,11 @@ func (a *Application) GetMessages(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
-	defer rows.Close()
+	defer func() {
+		if err = rows.Close(); err != nil {
+			log.Println("Ошибка закрытия rows: ", err)
+		}
+	}()
 	var messages []MessagesResponse
 	for rows.Next() {
 		var message MessagesResponse
@@ -400,7 +429,7 @@ func (a *Application) AuthMiddleware(next http.Handler) http.Handler {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"no token"}`))
+			_, _ = w.Write([]byte(`{"error":"no token"}`))
 			return
 		}
 

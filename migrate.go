@@ -5,6 +5,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -18,23 +19,27 @@ func RunMigrations(db *sql.DB) error {
 	//создаем источник из нашей embed файловой системы (откуда читать миграции)
 	source, err := iofs.New(migrationsFS, "migrations")
 	if err != nil {
-		return fmt.Errorf("Ошибка чтения embed миграций: %w", err)
+		return fmt.Errorf("ошибка чтения embed миграций: %w", err)
 	}
-	defer source.Close()
+	defer func() {
+		if err = source.Close(); err != nil {
+			log.Println("ошибка закрытия источника миграций: ", err)
+		}
+	}()
 
 	//оборачиваем пул в драйвер БД (куда накидывать миграции)
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
-		return fmt.Errorf("Ошибка драйвера миграций: %w", err)
+		return fmt.Errorf("ошибка драйвера миграций: %w", err)
 	}
 
 	//создаем наш мигратор, передаем наш source(источник, откуда брать миграции), и driver(БД)
 	m, err := migrate.NewWithInstance("iofs", source, "postgres", driver)
 	if err != nil {
-		return fmt.Errorf("Ошибка создания мигратора: %w", err)
+		return fmt.Errorf("ошибка создания мигратора: %w", err)
 	}
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("Ошибка применения миграций: %w", err)
+	if err = m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("ошибка применения миграций: %w", err)
 	}
 	return nil
 
