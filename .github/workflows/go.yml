@@ -7,6 +7,9 @@ on: #выполняй этот скрипт каждый раз, когда пр
     branches: ["main"]
 jobs:
   build-and-test:
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest #запустить это все на ubuntu
     steps:
     - name: Checkout code #-name это по сути просто имя этапа
@@ -23,5 +26,17 @@ jobs:
       uses: golangci/golangci-lint-action@v7
       with:
         version: v2.15.0
+    - name: log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build and push Docker image
+      uses: docker/build-push-actopn@v6
+      with:
+        context: .
+        push: true
+        tags: ghcr.io/${{ github.repository }}:latest
 
 
