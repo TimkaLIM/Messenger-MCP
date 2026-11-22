@@ -1,6 +1,7 @@
 package main
 
 import (
+	"MCPmessenger"
 	"database/sql"
 	"fmt"
 
@@ -12,7 +13,6 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"MCPmessenger/internal/DataBase"
 	"MCPmessenger/internal/api"
 )
 
@@ -44,7 +44,7 @@ func main() {
 	}
 	fmt.Println("База данных запущена...")
 
-	MigrateErr := DataBase.RunMigrations(db) //Вызов миграций
+	MigrateErr := MCPmessenger.RunMigrations(db) //Вызов миграций
 	if MigrateErr != nil {
 		log.Fatal("Ошибка наложения миграций: ", MigrateErr)
 	}
