@@ -1,6 +1,8 @@
-package main
+package api
 
 import (
+	"MCPmessenger/internal/DataBase"
+	"MCPmessenger/internal/models"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -20,9 +22,23 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+//STRUCTS BLOCK START
+
 type contextKey string
 
 const userIDKey contextKey = "user_id"
+
+type Application struct {
+	DB        models.DBInterface
+	SecretKey string
+}
+
+type ResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+//STRUCTS BLOCK END
 
 // HANDLERS BLOCK START
 
@@ -64,7 +80,7 @@ func (a *Application) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	w.Header().Set("Content-Type", "application/json")
-	var NewUser User
+	var NewUser models.User
 	err := json.NewDecoder(r.Body).Decode(&NewUser)
 	if err != nil {
 		log.Println("Ошибка регистрации пользователя: ", err)
@@ -112,7 +128,7 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	w.Header().Set("Content-Type", "application/json")
-	var LoginUser User
+	var LoginUser models.User
 	jsonErr := json.NewDecoder(r.Body).Decode(&LoginUser)
 	if jsonErr != nil {
 		log.Println("Ошибка декодирования логина/пароля: ", jsonErr)
@@ -120,7 +136,7 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	//Проверка пароля и логина
-	user, err := GetUserByUsername(r.Context(), a.DB, LoginUser.Username, LoginUser.Password)
+	user, err := DataBase.GetUserByUsername(r.Context(), a.DB, LoginUser.Username, LoginUser.Password)
 	if err != nil {
 		log.Println("Неверный логин или пароль", err)
 		w.WriteHeader(400)
@@ -162,7 +178,7 @@ func (a *Application) protectedHandler(w http.ResponseWriter, r *http.Request) {
 func (a *Application) CreateChatHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	//Принимаем на вход JSON, название чата
-	var ChatInfo CreateChatRequest
+	var ChatInfo models.CreateChatRequest
 	err := json.NewDecoder(r.Body).Decode(&ChatInfo)
 	if err != nil {
 		log.Println("Ошибка декодирования информации о чате: ", err)
@@ -186,7 +202,7 @@ func (a *Application) CreateChatHandler(w http.ResponseWriter, r *http.Request) 
 	userID := r.Context().Value("user_id").(int)
 
 	var ChatID int
-	invite_code, err := GenerateInviteCode(6)
+	invite_code, err := DataBase.GenerateInviteCode(6)
 	if err != nil {
 		log.Println("Ошибка генерации кода приглашения: ", err)
 		w.WriteHeader(500)
@@ -229,9 +245,9 @@ func (a *Application) SelectAllChatsHandler(w http.ResponseWriter, r *http.Reque
 			log.Println("Ошибка закрытия rows: ", err)
 		}
 	}()
-	var chats_list []ChatResponse
+	var chats_list []models.ChatResponse
 	for rows.Next() {
-		var chat ChatResponse
+		var chat models.ChatResponse
 		if err = rows.Scan(&chat.ID, &chat.Title); err != nil {
 			log.Println("Ошибка сканирования id&title чата: ", err)
 			continue
@@ -253,7 +269,7 @@ func (a *Application) SelectAllChatsHandler(w http.ResponseWriter, r *http.Reque
 
 func (a *Application) JoinToChatHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-type", "application/json")
-	var Request JoinChat
+	var Request models.JoinChat
 	err := json.NewDecoder(r.Body).Decode(&Request)
 	if err != nil {
 		log.Println("Ошибка декодирования заявки в чат: ", err)
@@ -300,7 +316,7 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(400)
 		return
 	}
-	var message ReceivedMessage
+	var message models.ReceivedMessage
 	err = json.NewDecoder(r.Body).Decode(&message)
 	if err != nil {
 		log.Println("Ошибка принятия сообщения: ", err)
@@ -403,9 +419,9 @@ func (a *Application) GetMessages(w http.ResponseWriter, r *http.Request) {
 			log.Println("Ошибка закрытия rows: ", err)
 		}
 	}()
-	var messages []MessagesResponse
+	var messages []models.MessagesResponse
 	for rows.Next() {
-		var message MessagesResponse
+		var message models.MessagesResponse
 		err = rows.Scan(&message.ID, &message.SenderID, &message.Text, &message.CreatedAT)
 		if err != nil {
 			log.Println("Ошибка выгрузки сообщения(1): ", err)
@@ -507,7 +523,7 @@ func registerRoute(mux *http.ServeMux, methodAndPath string,
 
 //MIDDLEWARE BLOCK END
 
-func ServerStart(database DBInterface) {
+func ServerStart(database models.DBInterface) {
 	secret := os.Getenv("token_key")
 	mux := http.NewServeMux()
 	app := Application{

@@ -1,6 +1,7 @@
-package main
+package api
 
 import (
+	"MCPmessenger/internal/models"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -15,7 +16,7 @@ func TestHealthHandler(t *testing.T) {
 	req := httptest.NewRequest("GET", "/health", nil) //аналог r *http.Request
 	rr := httptest.NewRecorder()                      //аналог w http.ResponseWriter
 	app := &Application{
-		DB: &MockDB{},
+		DB: &models.MockDB{},
 	}
 	app.healthHandler(rr, req)
 	if rr.Code != http.StatusOK {
@@ -81,7 +82,7 @@ func TestRegisterUser(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockDB := &MockDB{ReturnError: tt.mockReturnErr}
+			mockDB := &models.MockDB{ReturnError: tt.mockReturnErr}
 			app := &Application{
 				DB:        mockDB,
 				SecretKey: "test",
@@ -114,7 +115,7 @@ func TestLoginUser(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockDB := &MockDB{ReturnError: tt.mockReturnErr}
+			mockDB := &models.MockDB{ReturnError: tt.mockReturnErr}
 			app := &Application{
 				DB:        mockDB,
 				SecretKey: "test",
@@ -156,7 +157,7 @@ func TestCreateChatHandler(t *testing.T) {
 			req := httptest.NewRequest("POST", "/createchat",
 				strings.NewReader(tt.requestBody))
 			rr := httptest.NewRecorder()
-			mockDB := &MockDB{ReturnError: tt.MockReturnErr}
+			mockDB := &models.MockDB{ReturnError: tt.MockReturnErr}
 			app := &Application{
 				DB:        mockDB,
 				SecretKey: "test",
