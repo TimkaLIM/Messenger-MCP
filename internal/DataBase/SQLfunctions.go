@@ -1,6 +1,7 @@
-package main
+package db
 
 import (
+	"MCPmessenger/internal/models"
 	"context"
 	"crypto/rand"
 	"math/big"
@@ -22,8 +23,8 @@ func GenerateInviteCode(length int) (string, error) {
 	return string(result), nil
 }
 
-func GetUserByUsername(ctx context.Context, db DBInterface, login string, password string) (*User2, error) {
-	var user User2
+func GetUserByUsername(ctx context.Context, db models.DBInterface, login string, password string) (*models.User2, error) {
+	var user models.User2
 	err := db.QueryRowContext(ctx, "SELECT id,username,password_hash FROM users WHERE username = $1",
 		login).Scan(&user.ID, &user.Username, &user.PasswordHash)
 	if err != nil {
