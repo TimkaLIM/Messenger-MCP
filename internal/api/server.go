@@ -3,12 +3,14 @@ package api
 import (
 	"MCPmessenger/internal/DataBase"
 	"MCPmessenger/internal/models"
+	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +20,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -31,11 +35,19 @@ const userIDKey contextKey = "user_id"
 type Application struct {
 	DB        models.DBInterface
 	SecretKey string
+	Hub       *Hub
 }
 
 type ResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
+}
+
+func (rw *ResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := rw.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("underlying ResponseWriter is not a Hijacker")
 }
 
 //STRUCTS BLOCK END
@@ -348,6 +360,19 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(500)
 		return
 	}
+
+	JSONMessage, err := json.Marshal(map[string]any{
+		"id":         messageID,
+		"sender_id":  senderID,
+		"text":       message.Text,
+		"created_at": createdAT,
+	})
+	BroadCastMessage := Broadcast{
+		ChatID:          chatID,
+		ReceivedMessage: JSONMessage,
+	}
+	a.Hub.broadcast <- BroadCastMessage
+
 	w.WriteHeader(http.StatusCreated)
 	if err = json.NewEncoder(w).Encode(map[string]any{
 		"id":         messageID,
@@ -444,6 +469,61 @@ func (a *Application) GetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+//создаём глобально, чтобы каждый раз не создавать заново
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true //разрешаем подключение с любых доменов (для разработки)
+	},
+}
+
+func (a *Application) WebSocketHandler(w http.ResponseWriter, r *http.Request) {
+
+	chat_id_str := r.PathValue("chat_id")
+	chat_id, err := strconv.Atoi(chat_id_str)
+	if err != nil {
+		log.Println("Ошибка перевода id чата из строки в число: ", err)
+		w.WriteHeader(400)
+		return
+	}
+	//создаём канал для клиента
+	clientConn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println("Ошибка обновления соединения: ", err)
+		w.WriteHeader(500)
+		return
+	}
+	client := &Client{
+		Conn:   clientConn,
+		ChatID: chat_id,
+	}
+	//отправляем клиента в канал добавления в комнату
+	a.Hub.register <- client
+
+	//запускаем чтение
+	go func() {
+		defer func() {
+			a.Hub.unregister <- client
+			err = client.Conn.Close()
+			if err != nil {
+				log.Println("Ошибка закрытия канала клиента: ", err)
+			}
+		}()
+
+		for {
+			//Читаем сообщения от клиента
+			_, _, err = client.Conn.ReadMessage()
+			if err != nil {
+				log.Println("Ошибка чтения сообщения пользователя: ", err)
+				break
+			}
+		}
+	}()
+
+}
+
 // HANDLERS BLOCK END
 
 //Middleware BLOCK START
@@ -526,9 +606,12 @@ func registerRoute(mux *http.ServeMux, methodAndPath string,
 func ServerStart(database models.DBInterface) {
 	secret := os.Getenv("token_key")
 	mux := http.NewServeMux()
+	hub := NewHub()
+	go hub.Run()
 	app := Application{
 		DB:        database,
 		SecretKey: secret,
+		Hub:       hub,
 	}
 
 	//РЕГИСТРАЦИЯ ХЭНДЛЕРОВ
@@ -551,6 +634,8 @@ func ServerStart(database models.DBInterface) {
 	mux.Handle("POST /chats/{id}/message", MessageHandler)
 	GetMessagesHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.GetMessages)))
 	mux.Handle("GET /chats/{id}/messages", GetMessagesHandler)
+	WebJuiceHandler := loggingMiddleware(app.AuthMiddleware(http.HandlerFunc(app.WebSocketHandler)))
+	mux.Handle("GET /ws/{chat_id}", WebJuiceHandler)
 
 	//ОТКРЫТИЕ СЕРВЕРА
 	srv := &http.Server{
