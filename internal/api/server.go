@@ -373,7 +373,7 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(500)
 		return
 	}
-	
+
 	BroadCastMessage := Broadcast{
 		ChatID:          chatID,
 		ReceivedMessage: JSONMessage,
