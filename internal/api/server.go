@@ -367,6 +367,13 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 		"text":       message.Text,
 		"created_at": createdAT,
 	})
+	if err != nil {
+		log.Println("Ошибка создания JSON для передачи"+
+			"сообщения в Websocket канал: ", err)
+		w.WriteHeader(500)
+		return
+	}
+	
 	BroadCastMessage := Broadcast{
 		ChatID:          chatID,
 		ReceivedMessage: JSONMessage,
