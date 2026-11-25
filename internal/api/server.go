@@ -171,8 +171,7 @@ func (a *Application) LoginUser(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"status":"login false"}`))
 		return
 	}
-	_, _ = w.Write([]byte(`{"status":"correct login and password"}`))
-	_, _ = fmt.Fprintf(w, `{"token":"%s"}`, tokenString)
+	_, _ = fmt.Fprintf(w, `{"status":"correct login and password","token":"%s"}`, tokenString)
 
 }
 
@@ -488,11 +487,28 @@ var upgrader = websocket.Upgrader{
 
 func (a *Application) WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
+	userID := r.Context().Value(userIDKey).(int)
+
 	chat_id_str := r.PathValue("chat_id")
 	chat_id, err := strconv.Atoi(chat_id_str)
 	if err != nil {
 		log.Println("Ошибка перевода id чата из строки в число: ", err)
 		w.WriteHeader(400)
+		return
+	}
+	//check user is chat_member
+	var exists int
+	err = a.DB.QueryRowContext(r.Context(), "SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2", chat_id, userID).Scan(&exists)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// Пользователя НЕТ в этом чате
+			log.Println("Попытка подключения к чужому чату:", userID, "->", chat_id)
+			w.WriteHeader(403)
+			return
+		}
+		// Другая ошибка БД (например, база упала)
+		log.Println("Ошибка БД при проверке участия в чате:", err)
+		w.WriteHeader(500)
 		return
 	}
 	//создаём канал для клиента
@@ -506,6 +522,7 @@ func (a *Application) WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 		Conn:   clientConn,
 		ChatID: chat_id,
 	}
+	//если пользователь состоит в чате
 	//отправляем клиента в канал добавления в комнату
 	a.Hub.register <- client
 

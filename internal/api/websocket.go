@@ -24,7 +24,7 @@ type Hub struct {
 
 	register   chan *Client
 	unregister chan *Client
-	broadcast  chan Broadcast //сюда кидаем готовый JSON для рассылки
+	broadcast  chan Broadcast // сюда кидаем готовый JSON для рассылки
 }
 
 func NewHub() *Hub {
