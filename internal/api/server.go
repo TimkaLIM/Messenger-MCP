@@ -360,6 +360,7 @@ func (a *Application) SendMessageHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	//send message on websocket channel
 	JSONMessage, err := json.Marshal(map[string]any{
 		"id":         messageID,
 		"sender_id":  senderID,
@@ -545,6 +546,9 @@ func (a *Application) WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+	//Когда клиент закрывает соединение(например закрыл браузер) - ошибку соединения ловит ReadMessage()
+	//И когда err!=nil -> срабатывает break, цикл закрывается и дальше срабатывает defer func()
+	//Он удаляет клиента из комнаты и закрывает его канал
 
 }
 
