@@ -11,13 +11,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/joho/godotenv"
-
 	"MCPmessenger/internal/api"
 )
 
 func main() {
-	_ = godotenv.Load()
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
